@@ -8,6 +8,7 @@ use base qw/Class::AutoAccess/ ;
 use Carp ;
 
 use LWP::Simple ;
+use URI::Escape ;
 
 =head1 NAME
 
@@ -15,17 +16,23 @@ Nabaztag - A module to interface your nabaztag!
 
 =head1 VERSION
 
-Version 0.01
+Version 0.02
 
 =head1 ABOUT
 
-Nabaztag.pm  complies with nabaztag API V01 from violet company:
+Nabaztag.pm  complies with nabaztag API V1 from violet company.
 
-http://www.nabaztag.com/vl/FR/nabaztag_api_version01.pdf
+old APIV01 :http://www.nabaztag.com/vl/FR/nabaztag_api_version01.pdf
+
+API V1 WILL BE SOON PUBLISHED.
+
+See api mailing list at http://fr.groups.yahoo.com/group/nabaztag_api/
+
+See help at http://www.nabaztag.com/ 
 
 =cut
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 our $BASE_URL = "http://www.nabaztag.com/vl/FR/api.jsp" ;
 our $ID_APP = 11 ;
 
@@ -40,9 +47,12 @@ It also provide a simple command line tool to try your nabaztag: nabaztry (see S
 This tool is install in /usr/bin/
 
 It makes great use of LWP::Simple to interact with the rabbit.
+
 PROXY issues:
 
  If you're behind a proxy, see LWP::Simple proxy issues to know how to deal with that.
+ Basically, set env variable HTTP_PROXY to your proxi url in order to make it work.
+ For instance : export HTTP_PROXY=http://my.proxy.company:8080/ 
 
 
 =head1 SYNOPSIS
@@ -54,7 +64,8 @@ Commandline:
 Perl code:
 
 
-    use Nabaztag;
+    use Nabaztag ; # OR
+    # use Nabaztag { 'debug' => 1 } ;
 
     
     my $nab = Nabaztag->new();
@@ -70,6 +81,11 @@ Perl code:
 
     $nab->syncState();
 
+    $nab->sayThis("Demain, il pleuvra des grillons jusqu'a extinction totale de la race humaine.");
+    .....
+
+See detailled methods for full possibilities.
+
 Gory details :
 
 You can access or modify BASE_URL by accessing:
@@ -83,7 +99,7 @@ For application id :
 
 =head2 new
 
-Returns a new software nabaztag.
+Returns a new software nabaztag with ears position fetched from the hardware one if the mac and token is given.
 
 It has following properties:
 
@@ -94,11 +110,36 @@ It has following properties:
   leftEarPos : position of left ear.
   rightEarPos : position of right ear.
 
+usage:
+    my $nab = Nabaztag->new($mac , $token );
+    print $nab->leftEarPos();
+    print $nab->rightEarPos();
+
+OR:
+
+    my $nab = Nabaztag->new();
+    $nab->mac($mac);
+    $nab->token($token);
+    $nab->fetchEars();
+
+    print $nab->leftEarPos();
+    print $nab->rightEarPos();
 
 =cut
 
+my $debug = undef ;
+sub import{
+    #my $callerPack = caller ;
+    my ($class, $options) = @_ ;
+    if(  ! defined $debug ){
+    	$debug = $options->{'debug'} || 0 ;
+    }
+    print "\n\nDebug option : $debug \n\n" if ($debug);
+}
+
+
 sub new {
-    my ($class) = @_ ;
+    my ($class , $mac, $token ) = @_ ;
     
     my $self = {
 	'mac' => undef , # MAC Adress of nabaztag - equivalent to Serial Number ( SN )
@@ -107,7 +148,15 @@ sub new {
 	'rightEarPos' => undef  # Position of right ear
 	};
     
-    return bless $self, $class ;
+    $self = bless $self, $class ;
+    
+    $self->mac($mac) ;
+    $self->token($token);
+    if( $self->mac() && $self->token() ){
+	print "Trying to fetch ears position" if ( $debug );
+	$self->fetchEars();
+    }
+    return $self ;
 }
 
 =head2 leftEarPos
@@ -168,23 +217,18 @@ Usage:
 sub sendMessageNumber{
     my ($self, $num ) = @_ ;
     
-    my $url =  $BASE_URL.'?idapp='.$ID_APP ;
-
-    $self->_assume('mac');
-    $self->_assume('token');
+    my $url =  $self->_cookUrl();
     unless( defined $num ){
 	confess("No message number given");
     }
-             
-    $url .= '&sn='.$self->mac() ;
-    $url .= '&token='.$self->token() ;
-
+  
     $url .= '&idmessage='.$num ;
 
-    print "Accessing URL : $url\n";
+    print "Accessing URL : $url\n" if ($debug);
 
     my $content = get($url);
     
+    print "content :".$content."\n" if ($debug);
     unless( defined $content ){
 	confess("An error occured while processing request");
     }
@@ -205,13 +249,7 @@ Usage:
 sub syncState{
     my ($self) = @_ ;
     
-    my $url =  $BASE_URL.'?idapp='.$ID_APP ;
-    
-    $self->_assume('mac');
-    $self->_assume('token');
-       
-    $url .= '&sn='.$self->mac() ;
-    $url .= '&token='.$self->token() ;
+    my $url = $self->_cookUrl();
 
     if( defined $self->leftEarPos() ){
 	$url .=	'&posleft='.$self->leftEarPos() ;
@@ -220,13 +258,154 @@ sub syncState{
 	$url .= '&posright='.$self->rightEarPos();
     }
 
+    print "Getting url:".$url."\n" if ($debug);
     my $content = get($url);
+    print "Content:".$content."\n" if ($debug);
     unless( defined $content ){
 	confess("An error occured while processing request");
     }
     
 }
 
+=head2 fetchEars
+
+Fetches the real position of ear from the device and fill
+the leftEarPos and the rightEarPos properties.
+
+=cut
+
+sub fetchEars{
+    my ($self) = @_ ;
+    
+    my $url = $self->_cookUrl();
+    $url .= '&ears=ok' ;
+    
+    print "Accessing: ".$url."\n" if ($debug);
+    my $content = get($url);
+    print "Ear content \n".$content."\n" if ($debug);
+    
+    my ($left , $right) =  $content =~ /([0-9]+)/g  ;
+
+    #print "Left :".$left."\n";
+    #print "Right:".$right."\n";
+    
+    $self->leftEarPos($left);
+    $self->rightEarPos($right);
+    
+}
+
+=head2 sayThis
+
+Makes the rabbit tell the sentence you give as parameter
+
+Usage:
+    
+    $nab->sayThis("Demain, il pleuvra des grillons jusqu'a extinction totale de la race humaine."); # (example)
+
+=cut
+
+sub sayThis{
+    my ($self, $text ) = @_ ;
+    my $url = $self->_cookUrl();
+    $url .= '&tts='.uri_escape($text) ;
+    my $content = get($url);
+    print "TTS: ".$content."\n" if ($debug);
+}
+
+=head2 danceThis
+
+Sends a choregraphy to the rabbit, with the optionnaly given title
+
+Please refer to the APIV1 documentation to know how to compose your choregraphy
+
+Usage:
+    my $chor = '10,0,motor,1,20,0,0,0,led,2,0,238,0,2,led,1,250,0,0,3,led,2,0,0,0' ;
+    my $title = 'example' ;
+    $nab->danceThis($chor, $title);
+
+=cut
+
+sub danceThis{
+    my ($self, $chor, $title) = @_ ;
+    my $url = $self->_cookUrl();
+    $url .= '&chor='.uri_escape($chor) ;
+    $url .= '&chortitle='.uri_escape($title) if (defined $title);
+    print "Getting url:".$url."\n" if ($debug);
+    my $content = get($url);
+    print "Content :".$content."\n" if ($debug);
+}
+
+=head2 nabcastMessage
+
+Sends the given message id to the given nabcast id with given title
+
+Please refer to nabaztag website to get these identifiers.
+
+usage:
+    $nab->nabcastMessage($nabcastId, $title, $idMessage);
+
+=cut
+
+sub nabcastMessage{
+    my ($self, $nabcastID, $title, $idmessage) = @_ ;
+    my $url = $self->_cookUrl();
+    
+    $url .= '&nabcast='.$nabcastID ;
+    $url .= '&nabcasttitle='.$title ;
+    $url .= '&idmessage='.$idmessage ;
+    
+    print "Accessing :".$url."\n" if ($debug);
+    my $content = get($url);
+    print "Content:".$content."\n" if ($debug) ;
+}
+
+=head2 nabcastText
+
+Sends the given texttosay to the given nabcast id with given title
+
+Please refer to nabaztag website to get these identifiers.
+
+usage:
+    $nab->nabcastText($nabcastId, $title, $texttosay);
+
+
+=cut
+
+sub nabcastText{
+    my ($self, $nabcastID, $title, $text) = @_ ;
+    my $url = $self->_cookUrl();
+    
+    $url .= '&nabcast='.$nabcastID ;
+    $url .= '&nabcasttitle='.$title ;
+    $url .= '&tts='.uri_escape($text) ;
+    
+    print "Getting url.".$url."\n" if ($debug);
+    my $content = get($url);
+    print "Content:".$content."\n" if ($debug) ;
+}
+
+=head2 _cookUrl
+
+Returns a cooked url ready for sending something usefull
+
+Usage:
+    
+    my $url = $this->_cookUtl();
+
+=cut
+
+sub _cookUrl{
+    my ($self) = @_ ;
+    my $url =  $BASE_URL.'?idapp='.$ID_APP ;
+    
+    $self->_assume('mac');
+    $self->_assume('token');
+       
+    $url .= '&sn='.$self->mac() ;
+    $url .= '&token='.$self->token() ;
+
+    return $url ;
+}
 
 sub _assume{
     my ($self, $propertie ) = @_ ;
