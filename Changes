@@ -1,4 +1,7 @@
 Revision history for Nabaztag
+0.03    16 dec 2005
+	- Now use LWP::UserAgent in order to send the accept-language=fr
+	to make the rabbit run. 
 
 0.02    19 nov 2005
         Complies with V1 of the API

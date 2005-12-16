@@ -12,7 +12,7 @@ WriteMakefile(
     PREREQ_PM => {
         'Test::More' => 0,
 	'Class::AutoAccess' => 0.02,
-	'LWP::Simple' => 1.41,
+	'LWP::UserAgent' => 2.033,
 	'URI::Escape' => 3.21
     },
     dist                => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },

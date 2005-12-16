@@ -7,7 +7,7 @@ use base qw/Class::AutoAccess/ ;
 
 use Carp ;
 
-use LWP::Simple ;
+use LWP::UserAgent ;
 use URI::Escape ;
 
 =head1 NAME
@@ -16,7 +16,7 @@ Nabaztag - A module to interface your nabaztag!
 
 =head1 VERSION
 
-Version 0.02
+Version 0.03
 
 =head1 ABOUT
 
@@ -32,7 +32,7 @@ See help at http://www.nabaztag.com/
 
 =cut
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 our $BASE_URL = "http://www.nabaztag.com/vl/FR/api.jsp" ;
 our $ID_APP = 11 ;
 
@@ -226,7 +226,7 @@ sub sendMessageNumber{
 
     print "Accessing URL : $url\n" if ($debug);
 
-    my $content = get($url);
+    my $content = $self->_getUserAgent->()->get($url)->content();
     
     print "content :".$content."\n" if ($debug);
     unless( defined $content ){
@@ -259,7 +259,7 @@ sub syncState{
     }
 
     print "Getting url:".$url."\n" if ($debug);
-    my $content = get($url);
+    my $content = $self->_getUserAgent()->get($url)->content();
     print "Content:".$content."\n" if ($debug);
     unless( defined $content ){
 	confess("An error occured while processing request");
@@ -281,7 +281,7 @@ sub fetchEars{
     $url .= '&ears=ok' ;
     
     print "Accessing: ".$url."\n" if ($debug);
-    my $content = get($url);
+    my $content = $self->_getUserAgent()->get($url)->content();
     print "Ear content \n".$content."\n" if ($debug);
     
     my ($left , $right) =  $content =~ /([0-9]+)/g  ;
@@ -308,7 +308,7 @@ sub sayThis{
     my ($self, $text ) = @_ ;
     my $url = $self->_cookUrl();
     $url .= '&tts='.uri_escape($text) ;
-    my $content = get($url);
+    my $content = $self->_getUserAgent()->get($url)->content();
     print "TTS: ".$content."\n" if ($debug);
 }
 
@@ -331,7 +331,7 @@ sub danceThis{
     $url .= '&chor='.uri_escape($chor) ;
     $url .= '&chortitle='.uri_escape($title) if (defined $title);
     print "Getting url:".$url."\n" if ($debug);
-    my $content = get($url);
+    my $content = $self->_getUserAgent()->get($url)->content();
     print "Content :".$content."\n" if ($debug);
 }
 
@@ -355,7 +355,7 @@ sub nabcastMessage{
     $url .= '&idmessage='.$idmessage ;
     
     print "Accessing :".$url."\n" if ($debug);
-    my $content = get($url);
+    my $content = $self->_getUserAgent()->get($url)->content();
     print "Content:".$content."\n" if ($debug) ;
 }
 
@@ -380,7 +380,7 @@ sub nabcastText{
     $url .= '&tts='.uri_escape($text) ;
     
     print "Getting url.".$url."\n" if ($debug);
-    my $content = get($url);
+    my $content = $self->_getUserAgent()->get($url)->content();
     print "Content:".$content."\n" if ($debug) ;
 }
 
@@ -406,6 +406,16 @@ sub _cookUrl{
 
     return $url ;
 }
+
+sub _getUserAgent{
+    my ($self) = @_ ;
+    my $ua = LWP::UserAgent->new;
+    $ua->timeout(60);
+    $ua->env_proxy;
+    $ua->default_headers->push_header('Accept-Language' => "fr");
+    return $ua ;
+}
+
 
 sub _assume{
     my ($self, $propertie ) = @_ ;
