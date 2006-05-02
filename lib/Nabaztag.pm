@@ -16,25 +16,27 @@ Nabaztag - A module to interface your nabaztag!
 
 =head1 VERSION
 
-Version 0.03
+Version 0.04
 
 =head1 ABOUT
 
 Nabaztag.pm  complies with nabaztag API V1 from violet company.
 
-old APIV01 :http://www.nabaztag.com/vl/FR/nabaztag_api_version01.pdf
-
-API V1 WILL BE SOON PUBLISHED.
+The API tied to this module can be downloaded here http://www.nabaztag.com/vl/FR/gfx/1/APIV2.pdf
 
 See api mailing list at http://fr.groups.yahoo.com/group/nabaztag_api/
 
-See help at http://www.nabaztag.com/ 
+See help at http://www.nabaztag.com/
 
 =cut
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 our $BASE_URL = "http://www.nabaztag.com/vl/FR/api.jsp" ;
 our $ID_APP = 11 ;
+
+our @LANGUAGES = ('en', 'fr');
+our @VOICES_FR = ('julie22k', 'claire22s');
+our @VOICES_EN = ('graham22s', 'lucy22s', 'heather22k', 'ryan22k', 'aaron22s', 'laura22s');
 
 =head1 DESCRIPTION
 
@@ -52,7 +54,7 @@ PROXY issues:
 
  If you're behind a proxy, see LWP::Simple proxy issues to know how to deal with that.
  Basically, set env variable HTTP_PROXY to your proxi url in order to make it work.
- For instance : export HTTP_PROXY=http://my.proxy.company:8080/ 
+ For instance : export HTTP_PROXY=http://my.proxy.company:8080/
 
 
 =head1 SYNOPSIS
@@ -67,15 +69,15 @@ Perl code:
     use Nabaztag ; # OR
     # use Nabaztag { 'debug' => 1 } ;
 
-    
+
     my $nab = Nabaztag->new();
-    
+
     # MANDATORY
     $nab->mac($mac);
     $nab->token($tok);
-   
+
     # See new function to have details about how to get these properties.
- 
+
     $nab->leftEarPos($left);
     $nab->rightEarPos($right);
 
@@ -92,7 +94,7 @@ You can access or modify BASE_URL by accessing:
    $Nabaztag::BASE_URL ;
 
 For application id :
-   $Nabaztag::ID_APP ; 
+   $Nabaztag::ID_APP ;
 
 
 =head1 FUNCTIONS
@@ -103,15 +105,19 @@ Returns a new software nabaztag with ears position fetched from the hardware one
 
 It has following properties:
 
+  key : The key given here http://www.nabaztag.com/vl/FR/nabaztaland_api_inscription.jsp to register your service
   mac : MAC Adress of nabaztag - equivalent to Serial Number ( SN ). Written at the back
         of your nabaztag !!
   token :  TOKEN Given by nabaztag.com to allow interaction with you nabaztag. See
            http://www.nabaztag.com/vl/FR/api_prefs.jsp to obtain yours !!
   leftEarPos : position of left ear.
   rightEarPos : position of right ear.
+  ttl : how long, in seconds, the message is going to stay on the server, if undefined it will stay until archived.
+  speed : choose the speed of speaking in percent - normal is 100, 200 is double speed, 50 is half speed
+  pitch : modulate speech frequency in percent - normal is 100
 
 usage:
-    my $nab = Nabaztag->new($mac , $token );
+    my $nab = Nabaztag->new($mac, $token, $key);
     print $nab->leftEarPos();
     print $nab->rightEarPos();
 
@@ -139,26 +145,97 @@ sub import{
 
 
 sub new {
-    my ($class , $mac, $token ) = @_ ;
-    
+    my ($class , $mac, $token, $key) = @_ ;
+
     my $self = {
 	'mac' => undef , # MAC Adress of nabaztag - equivalent to Serial Number ( SN )
 	'token' => undef , # TOKEN Given by nabaztag.com to allow interaction with you nabaztag
+	'key' => undef, # KEY given by http://www.nabaztag.com/vl/FR/nabaztaland_api_inscription.jsp
 	'leftEarPos' => undef , # Position of left ear
-	'rightEarPos' => undef  # Position of right ear
+	'rightEarPos' => undef,  # Position of right ear
+	'_language' => 'fr', # default language
+	'_voice' => 0, # default voice
+	'ttl' => undef, # how long, in seconds, the message is going to stay on the server, if undefined it will stay until archived
+	'speed' => undef, # choose the speed of speaking
+	'pitch' => undef, # modulate speech frequency
 	};
-    
+
     $self = bless $self, $class ;
-    
+
     $self->mac($mac) ;
     $self->token($token);
-    if( $self->mac() && $self->token() ){
+    $self->key($key);
+    if( $self->mac() && $self->token() && $self->key()){
 	print "Trying to fetch ears position" if ( $debug );
 	$self->fetchEars();
     }
     return $self ;
 }
 
+=head2 language
+
+Get/Sets the language the nabaztag is currently speaking.
+
+Usage:
+    $nab->language('en');
+
+The language has to be in the list ('fr', 'en'). Default is 'fr' ;-)
+
+=cut
+
+sub language {
+    my ($self, $language) = @_ ;
+    if( defined $language ){
+    	my $ok = scalar(grep{/$language/i} @LANGUAGES);
+		if ( $ok ) {
+		    $self->{'_language'} = $language; 
+		} else {
+		    confess("Language has to be in the list: " . join ",", @LANGUAGES );
+		}
+    }
+    return $self->{'_language'};
+}
+
+=head2 voice
+
+Get/Sets the voice the nabaztag is using to make the Text To Speech conversion by setting the index of the voices list (zero based)
+
+Usage:
+    $nab->voice(0);
+
+The voice index has to be in the range of the list of voices associated to the currently defined language (French and English have a different set)
+To retrieve the list of voices is currently able to speak:
+	@voices = $nab->voices();
+
+=cut
+
+sub voice {
+    my ($self, $voice) = @_ ;
+    if( defined $voice ){
+    	my @voices = $self->voices;
+    	my $ok = $voice <= $#voices;
+		if ( $ok ) {
+		    $self->{'_voice'} = $voice; 
+		} else {
+		    confess("Voice is an integer in the range 0-" . $#voices);
+		}
+    }
+    return $self->{'_voice'};
+}
+###############################################################################################################################
+
+sub voices {
+	my $self = shift;
+	if ($self->language eq 'en') {
+		return @VOICES_EN;
+	} elsif ($self->language eq 'fr') {
+		return @VOICES_FR;
+	} else {
+		confess("Undefined language: ", $self->language);
+	}
+}
+
+###############################################################################################################################
 =head2 leftEarPos
 
 Get/Sets the left ear position of the nabaztag.
@@ -216,18 +293,18 @@ Usage:
 
 sub sendMessageNumber{
     my ($self, $num ) = @_ ;
-    
+
     my $url =  $self->_cookUrl();
     unless( defined $num ){
 	confess("No message number given");
     }
-  
+
     $url .= '&idmessage='.$num ;
 
     print "Accessing URL : $url\n" if ($debug);
 
     my $content = $self->_getUserAgent->()->get($url)->content();
-    
+
     print "content :".$content."\n" if ($debug);
     unless( defined $content ){
 	confess("An error occured while processing request");
@@ -241,14 +318,14 @@ Synchronise the current state of the soft nabaztag with the hardware one.
 Actually sends the state to the hardware nabaztag.
 
 Usage:
-    
+
     $nab->syncState();
 
 =cut
 
 sub syncState{
     my ($self) = @_ ;
-    
+
     my $url = $self->_cookUrl();
 
     if( defined $self->leftEarPos() ){
@@ -264,7 +341,7 @@ sub syncState{
     unless( defined $content ){
 	confess("An error occured while processing request");
     }
-    
+
 }
 
 =head2 fetchEars
@@ -276,22 +353,22 @@ the leftEarPos and the rightEarPos properties.
 
 sub fetchEars{
     my ($self) = @_ ;
-    
+
     my $url = $self->_cookUrl();
     $url .= '&ears=ok' ;
-    
+
     print "Accessing: ".$url."\n" if ($debug);
     my $content = $self->_getUserAgent()->get($url)->content();
     print "Ear content \n".$content."\n" if ($debug);
-    
+
     my ($left , $right) =  $content =~ /([0-9]+)/g  ;
 
     #print "Left :".$left."\n";
     #print "Right:".$right."\n";
-    
+
     $self->leftEarPos($left);
     $self->rightEarPos($right);
-    
+
 }
 
 =head2 sayThis
@@ -299,7 +376,7 @@ sub fetchEars{
 Makes the rabbit tell the sentence you give as parameter
 
 Usage:
-    
+
     $nab->sayThis("Demain, il pleuvra des grillons jusqu'a extinction totale de la race humaine."); # (example)
 
 =cut
@@ -308,6 +385,7 @@ sub sayThis{
     my ($self, $text ) = @_ ;
     my $url = $self->_cookUrl();
     $url .= '&tts='.uri_escape($text) ;
+    warn "URL=$url\n" ;
     my $content = $self->_getUserAgent()->get($url)->content();
     print "TTS: ".$content."\n" if ($debug);
 }
@@ -349,11 +427,11 @@ usage:
 sub nabcastMessage{
     my ($self, $nabcastID, $title, $idmessage) = @_ ;
     my $url = $self->_cookUrl();
-    
+
     $url .= '&nabcast='.$nabcastID ;
     $url .= '&nabcasttitle='.$title ;
     $url .= '&idmessage='.$idmessage ;
-    
+
     print "Accessing :".$url."\n" if ($debug);
     my $content = $self->_getUserAgent()->get($url)->content();
     print "Content:".$content."\n" if ($debug) ;
@@ -374,11 +452,11 @@ usage:
 sub nabcastText{
     my ($self, $nabcastID, $title, $text) = @_ ;
     my $url = $self->_cookUrl();
-    
+
     $url .= '&nabcast='.$nabcastID ;
     $url .= '&nabcasttitle='.$title ;
     $url .= '&tts='.uri_escape($text) ;
-    
+
     print "Getting url.".$url."\n" if ($debug);
     my $content = $self->_getUserAgent()->get($url)->content();
     print "Content:".$content."\n" if ($debug) ;
@@ -389,18 +467,30 @@ sub nabcastText{
 Returns a cooked url ready for sending something usefull
 
 Usage:
-    
-    my $url = $this->_cookUtl();
+
+    my $url = $this->_cookUrl();
 
 =cut
 
 sub _cookUrl{
     my ($self) = @_ ;
-    my $url =  $BASE_URL.'?idapp='.$ID_APP ;
-    
+    my @voices = $self->voices;
+    my $voice = $voices[$self->voice];
+    my $ttl = $self->ttl;
+    my $speed = $self->speed;
+    my $pitch = $self->pitch;
+
+    my $url =  $BASE_URL . "?voice=$voice&idapp=$ID_APP";
+
+	$url .= "&ttlive=$ttl" if ($ttl);
+	$url .= "&speed=$speed" if ($speed);
+	$url .= "&pitch=$pitch" if ($pitch);
+
     $self->_assume('mac');
     $self->_assume('token');
-       
+    $self->_assume('key');
+    
+    $url .= '&key='.$self->key() ;
     $url .= '&sn='.$self->mac() ;
     $url .= '&token='.$self->token() ;
 
@@ -427,6 +517,7 @@ sub _assume{
 =head1 AUTHOR
 
 Jerome Eteve, C<< <jerome@eteve.net> >>
+Christophe Gevrey << <gevrey+cpan@pobox.com> >>
 
 =head1 BUGS
 
